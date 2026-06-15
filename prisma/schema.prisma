@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Une recherche sauvegardée : l'ensemble des filtres qu'on rejoue à chaque cycle.
+model SavedSearch {
+  id         String   @id @default(cuid())
+  name       String
+  enabled    Boolean  @default(true)
+
+  // Filtres Vinted (mappés sur l'API catalog/items)
+  searchText String?
+  catalogIds Int[]    @default([])
+  brandIds   Int[]    @default([])
+  priceFrom  Decimal? @db.Decimal(10, 2)
+  priceTo    Decimal? @db.Decimal(10, 2)
+  order      String   @default("newest_first")
+
+  lastRunAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  listings   Listing[]
+
+  @@index([enabled])
+}
+
+/// Une annonce vue. Dédupliquée par (recherche, item Vinted) pour ne notifier qu'une fois.
+model Listing {
+  id            String      @id @default(cuid())
+  vintedItemId  BigInt
+  search        SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  searchId      String
+
+  title         String
+  price         Decimal     @db.Decimal(10, 2)
+  currency      String      @default("EUR")
+  url           String
+  photoUrl      String?
+  brand         String?
+  size          String?
+  sellerLogin   String?
+  publishedAt   DateTime?
+
+  notified      Boolean     @default(false)
+  seenAt        DateTime    @default(now())
+
+  @@unique([searchId, vintedItemId])
+  @@index([notified])
+}
