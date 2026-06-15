@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Context, Telegraf } from 'telegraf';
+import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
+import { AssistantService } from '../assistant/assistant.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchesService } from '../searches/searches.service';
 import { CreateSearchDto } from '../searches/dto/create-search.dto';
@@ -29,6 +31,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly searches: SearchesService,
     private readonly prisma: PrismaService,
+    private readonly assistant: AssistantService,
   ) {
     this.token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
     this.allowedChatId = this.config.get<string>('TELEGRAM_CHAT_ID');
@@ -62,6 +65,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     bot.command('resume', (ctx) => this.handleResume(ctx));
     bot.command('delete', (ctx) => this.handleDelete(ctx));
 
+    // Tout message texte non-commande est routé vers l'assistant IA.
+    bot.on(message('text'), (ctx) => this.handleText(ctx));
+
     bot.catch((err, ctx) => {
       this.logger.error(
         `Unhandled error for update ${ctx.updateType}`,
@@ -89,6 +95,33 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Route un message texte libre vers l'assistant IA. Les commandes inconnues
+   * (commençant par /) renvoient l'aide ; sinon Claude traite la demande.
+   */
+  private async handleText(ctx: TextContext): Promise<void> {
+    const text = ctx.message.text.trim();
+    if (text.startsWith('/')) {
+      await ctx.reply(this.helpText());
+      return;
+    }
+    if (!this.assistant.isEnabled()) {
+      await ctx.reply(
+        'Assistant IA désactivé (ANTHROPIC_API_KEY manquant). Utilise /add, /list, /pause, /resume, /delete.',
+      );
+      return;
+    }
+
+    const chatId = ctx.chat.id.toString();
+    try {
+      await ctx.sendChatAction('typing');
+      const reply = await this.assistant.chat(chatId, text);
+      await ctx.reply(reply.slice(0, 4000));
+    } catch (err) {
+      await this.replyError(ctx, "L'assistant a rencontré une erreur", err);
+    }
+  }
+
   private helpText(): string {
     return [
       'Vinted Scrapper - control plane',
@@ -100,8 +133,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       '/resume <id> - enable a search',
       '/delete <id> - delete a search',
       '',
-      'Example:',
-      '/add {"name":"Nike sneakers","searchText":"nike","priceTo":50}',
+      'Ou écris simplement en français ce que tu veux suivre,',
+      "l'assistant IA s'occupe du reste. Ex. :",
+      '"alerte-moi sur les montres Seiko entre 150 et 400€ sans répliques"',
     ].join('\n');
   }
 
