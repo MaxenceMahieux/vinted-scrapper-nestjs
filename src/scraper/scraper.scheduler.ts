@@ -1,9 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  SchedulerRegistry,
-} from '@nestjs/schedule';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { Queue } from 'bullmq';
 import { CronJob } from 'cron';
 import { SearchesService } from '../searches/searches.service';
@@ -25,12 +23,9 @@ export class ScraperScheduler {
     private readonly config: ConfigService,
     private readonly registry: SchedulerRegistry,
   ) {
-    const expression = this.config.get<string>(
-      'SCRAPE_CRON',
-      '*/60 * * * * *',
-    );
+    const expression = this.config.get<string>('SCRAPE_CRON', '*/60 * * * * *');
     const job = new CronJob(expression, () => this.enqueueAll());
-    this.registry.addCronJob('scrape-tick', job as never);
+    this.registry.addCronJob('scrape-tick', job);
     job.start();
     this.logger.log(`Scheduler démarré (cron: ${expression})`);
   }

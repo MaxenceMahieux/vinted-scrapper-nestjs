@@ -3,6 +3,16 @@ import { Listing } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VintedItem } from '../vinted/vinted.types';
 
+/**
+ * Item Vinted enrichi des données de pricing/scoring calculées en amont
+ * (clé de modèle normalisée et résultat du scoring deal).
+ */
+export type EnrichedVintedItem = VintedItem & {
+  modelKey?: string | null;
+  dealScore?: number | null;
+  isDeal?: boolean;
+};
+
 @Injectable()
 export class ListingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -11,8 +21,14 @@ export class ListingsService {
    * Persiste les items d'une recherche et renvoie uniquement ceux qui sont
    * nouveaux (jamais vus pour cette recherche). La déduplication repose sur la
    * contrainte unique (searchId, vintedItemId).
+   *
+   * Les champs optionnels `modelKey`, `dealScore` et `isDeal` sont persistés
+   * lorsqu'ils sont fournis par le pipeline de scraping.
    */
-  async saveNew(searchId: string, items: VintedItem[]): Promise<Listing[]> {
+  async saveNew(
+    searchId: string,
+    items: EnrichedVintedItem[],
+  ): Promise<Listing[]> {
     const created: Listing[] = [];
 
     for (const item of items) {
@@ -30,6 +46,9 @@ export class ListingsService {
             size: item.size,
             sellerLogin: item.sellerLogin,
             publishedAt: item.publishedAt,
+            modelKey: item.modelKey ?? undefined,
+            dealScore: item.dealScore ?? undefined,
+            isDeal: item.isDeal ?? undefined,
           },
         });
         created.push(listing);
