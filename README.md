@@ -57,6 +57,49 @@ curl -X POST http://localhost:3000/searches \
 
 Les recherches activées sont rejouées automatiquement par le cron (`SCRAPE_CRON`).
 
+## Déploiement Coolify
+
+L'application se déploie sur [Coolify](https://coolify.io/) en tant que ressource
+**Dockerfile** (build sur le stage `production`).
+
+1. **Ressources managées** : créer dans le même projet Coolify une base
+   **PostgreSQL** et un **Redis** (services managés Coolify). Récupérer leurs
+   identifiants de connexion internes.
+2. **Application** : créer une ressource « Dockerfile » pointant sur ce dépôt.
+   Coolify build l'image et lance le conteneur de production.
+3. **Variables d'environnement** : renseigner les variables ci-dessous dans
+   l'onglet *Environment Variables* (au minimum `DATABASE_URL`, `REDIS_HOST`,
+   `REDIS_PORT`, et les canaux de notification souhaités).
+4. **Migrations automatiques** : l'`docker-entrypoint.sh` exécute
+   `npx prisma migrate deploy` avant de démarrer l'application — les migrations
+   sont donc appliquées à chaque déploiement, aucune action manuelle requise.
+5. **Healthcheck** : configurer le health check Coolify sur `GET /health`
+   (port `3000`). L'endpoint vérifie la base PostgreSQL (`SELECT 1`) et Redis
+   (`PING`) via `@nestjs/terminus`.
+
+## Variables d'environnement
+
+| Variable               | Rôle                                                   | Défaut          |
+| ---------------------- | ------------------------------------------------------ | --------------- |
+| `DATABASE_URL`         | Chaîne de connexion PostgreSQL (Prisma)                | —               |
+| `REDIS_HOST`           | Hôte Redis (BullMQ + healthcheck)                      | `localhost`     |
+| `REDIS_PORT`           | Port Redis                                             | `6379`          |
+| `PORT`                 | Port d'écoute HTTP de l'application                    | `3000`          |
+| `SCRAPE_CRON`          | Expression cron d'enfilage des recherches             | —               |
+| `PRICE_STATS_CRON`     | Cron de recalcul des statistiques de prix par modèle   | —               |
+| `TELEGRAM_BOT_TOKEN`   | Token du bot Telegram (canal `telegram`)               | —               |
+| `TELEGRAM_CHAT_ID`     | Chat/canal cible des notifications Telegram            | —               |
+| `SMTP_HOST`            | Hôte SMTP (canal `email`)                              | —               |
+| `SMTP_PORT`            | Port SMTP                                               | —               |
+| `SMTP_USER`            | Utilisateur SMTP                                       | —               |
+| `SMTP_PASSWORD`        | Mot de passe SMTP                                      | —               |
+| `SMTP_FROM`            | Adresse expéditrice des e-mails                       | —               |
+| `SMTP_TO`              | Adresse destinataire des notifications e-mail          | —               |
+
+Les canaux de notification sont activés par recherche via le champ `channels`
+(ex. `["telegram"]`, `["email"]`) ; un canal n'est utilisé que si ses variables
+d'environnement sont renseignées.
+
 ## Roadmap
 
 - Deal scorer : prix de référence par modèle + score de bonne affaire
