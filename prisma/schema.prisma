@@ -9,47 +9,84 @@ datasource db {
 
 /// Une recherche sauvegardée : l'ensemble des filtres qu'on rejoue à chaque cycle.
 model SavedSearch {
-  id         String   @id @default(cuid())
-  name       String
-  enabled    Boolean  @default(true)
+  id              String   @id @default(cuid())
+  name            String
+  enabled         Boolean  @default(true)
 
-  // Filtres Vinted (mappés sur l'API catalog/items)
-  searchText String?
-  catalogIds Int[]    @default([])
-  brandIds   Int[]    @default([])
-  priceFrom  Decimal? @db.Decimal(10, 2)
-  priceTo    Decimal? @db.Decimal(10, 2)
-  order      String   @default("newest_first")
+  searchText      String?
+  catalogIds      Int[]    @default([])
+  brandIds        Int[]    @default([])
+  statusIds       Int[]    @default([]) // Vinted condition ids (etat)
+  sizeIds         Int[]    @default([])
+  priceFrom       Decimal? @db.Decimal(10, 2)
+  priceTo         Decimal? @db.Decimal(10, 2)
+  order           String   @default("newest_first")
+  country         String   @default("fr") // domaine vinted: fr/de/it/es/be...
+  includeKeywords String[] @default([])
+  excludeKeywords String[] @default([])
+  channels        String[] @default(["telegram"]) // cles de canaux de notif actives
+  dealOnly        Boolean  @default(false)
+  minDealScore    Float? // seuil 0..1 si dealOnly
 
-  lastRunAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  lastRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  listings   Listing[]
+  listings        Listing[]
+  observations    PriceObservation[]
 
   @@index([enabled])
 }
 
 /// Une annonce vue. Dédupliquée par (recherche, item Vinted) pour ne notifier qu'une fois.
 model Listing {
-  id            String      @id @default(cuid())
-  vintedItemId  BigInt
-  search        SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
-  searchId      String
+  id           String      @id @default(cuid())
+  vintedItemId BigInt
+  search       SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  searchId     String
 
-  title         String
-  price         Decimal     @db.Decimal(10, 2)
-  currency      String      @default("EUR")
-  url           String
-  photoUrl      String?
-  brand         String?
-  size          String?
-  sellerLogin   String?
-  publishedAt   DateTime?
+  title        String
+  price        Decimal     @db.Decimal(10, 2)
+  currency     String      @default("EUR")
+  url          String
+  photoUrl     String?
+  brand        String?
+  size         String?
+  sellerLogin  String?
+  publishedAt  DateTime?
 
-  notified      Boolean     @default(false)
-  seenAt        DateTime    @default(now())
+  modelKey     String? // cle de modele normalisee (pricing)
+  dealScore    Float?
+  isDeal       Boolean     @default(false)
+
+  notified     Boolean     @default(false)
+  seenAt       DateTime    @default(now())
 
   @@unique([searchId, vintedItemId])
   @@index([notified])
+  @@index([modelKey])
+}
+
+/// Un relevé de prix pour un modèle donné, alimentant les statistiques de pricing.
+model PriceObservation {
+  id           String       @id @default(cuid())
+  vintedItemId BigInt
+  modelKey     String
+  price        Decimal      @db.Decimal(10, 2)
+  currency     String       @default("EUR")
+  search       SavedSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  searchId     String?
+  observedAt   DateTime     @default(now())
+
+  @@index([modelKey])
+  @@index([observedAt])
+}
+
+/// Statistiques de prix agrégées par modèle (recalculées périodiquement).
+model PriceStat {
+  modelKey  String   @id
+  median    Decimal  @db.Decimal(10, 2)
+  p25       Decimal  @db.Decimal(10, 2)
+  samples   Int
+  updatedAt DateTime @updatedAt
 }
