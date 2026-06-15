@@ -1,65 +1,110 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Listing } from '@prisma/client';
-import axios from 'axios';
+import {
+  NOTIFICATION_CHANNEL,
+  NotificationChannel,
+  NotificationPayload,
+} from './channel.interface';
 
 /**
- * Envoie les notifications via l'API Bot Telegram.
- *
- * Configuration requise : TELEGRAM_BOT_TOKEN (via @BotFather) et TELEGRAM_CHAT_ID
- * (l'id de la conversation où pousser les alertes).
+ * Result of a dispatch: which channels succeeded, failed or were skipped.
+ */
+export interface DispatchSummary {
+  attempted: number;
+  succeeded: string[];
+  failed: string[];
+  skipped: string[];
+}
+
+/**
+ * Fans out a notification to every registered channel whose key is requested
+ * by the saved search and that is currently enabled. A failure on one channel
+ * never prevents the others from being delivered.
  */
 @Injectable()
 export class NotifierService {
   private readonly logger = new Logger(NotifierService.name);
-  private readonly token?: string;
-  private readonly chatId?: string;
 
-  constructor(private readonly config: ConfigService) {
-    this.token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-    this.chatId = this.config.get<string>('TELEGRAM_CHAT_ID');
-  }
+  constructor(
+    @Inject(NOTIFICATION_CHANNEL)
+    private readonly channels: NotificationChannel[],
+  ) {}
 
-  private get enabled(): boolean {
-    return Boolean(this.token && this.chatId);
-  }
+  /**
+   * Dispatch a payload to the requested channels.
+   *
+   * @param searchChannels channel keys enabled on the saved search
+   * @param payload the notification content
+   */
+  async dispatch(
+    searchChannels: string[],
+    payload: NotificationPayload,
+  ): Promise<DispatchSummary> {
+    const summary: DispatchSummary = {
+      attempted: 0,
+      succeeded: [],
+      failed: [],
+      skipped: [],
+    };
 
-  async notify(searchName: string, listing: Listing): Promise<void> {
-    if (!this.enabled) {
+    const requested = new Set(searchChannels);
+
+    for (const channel of this.channels) {
+      if (!requested.has(channel.key)) {
+        continue;
+      }
+
+      if (!channel.isEnabled()) {
+        summary.skipped.push(channel.key);
+        this.logger.warn(
+          `Channel "${channel.key}" requested but not configured, skipping: ${payload.title}`,
+        );
+        continue;
+      }
+
+      summary.attempted += 1;
+      try {
+        await channel.send(payload);
+        summary.succeeded.push(channel.key);
+      } catch (err) {
+        summary.failed.push(channel.key);
+        this.logger.error(
+          `Failed to send via "${channel.key}" for ${payload.url}`,
+          (err as Error).message,
+        );
+      }
+    }
+
+    if (summary.attempted === 0 && summary.skipped.length === 0) {
       this.logger.warn(
-        `Telegram non configuré, notification ignorée: ${listing.title}`,
-      );
-      return;
-    }
-
-    const text =
-      `🔔 <b>${searchName}</b>\n` +
-      `${this.escape(listing.title)}\n` +
-      `💶 <b>${listing.price} ${listing.currency}</b>` +
-      (listing.brand ? ` · ${this.escape(listing.brand)}` : '') +
-      (listing.size ? ` · ${this.escape(listing.size)}` : '') +
-      `\n${listing.url}`;
-
-    try {
-      await axios.post(
-        `https://api.telegram.org/bot${this.token}/sendMessage`,
-        {
-          chat_id: this.chatId,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: false,
-        },
-        { timeout: 10_000 },
-      );
-    } catch (err) {
-      this.logger.error(
-        `Échec d'envoi Telegram pour ${listing.url}`,
-        (err as Error).message,
+        `No matching channel for [${searchChannels.join(', ')}], notification ignored: ${payload.title}`,
       );
     }
+
+    return summary;
   }
 
-  private escape(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /**
+   * Legacy helper kept for callers still passing a Prisma {@link Listing}.
+   * Builds a {@link NotificationPayload} and delegates to {@link dispatch}.
+   */
+  async notify(
+    searchName: string,
+    listing: Listing,
+    channels: string[] = ['telegram'],
+  ): Promise<DispatchSummary> {
+    const payload: NotificationPayload = {
+      searchName,
+      title: listing.title,
+      price: Number(listing.price),
+      currency: listing.currency,
+      url: listing.url,
+      brand: listing.brand ?? undefined,
+      size: listing.size ?? undefined,
+      photoUrl: listing.photoUrl ?? undefined,
+      isDeal: listing.isDeal,
+      dealScore: listing.dealScore ?? undefined,
+    };
+    return this.dispatch(channels, payload);
   }
 }
