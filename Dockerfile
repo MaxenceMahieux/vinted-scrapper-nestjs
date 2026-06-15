@@ -6,13 +6,18 @@ COPY prisma ./prisma
 
 # --- Development ---
 FROM base AS development
-RUN npm ci
+# --include=dev force l'install des devDependencies meme si NODE_ENV=production
+# est injecte au build (ex. par Coolify), sinon le CLI nest est absent.
+ENV NODE_ENV=development
+RUN npm ci --include=dev
 COPY . .
 RUN npx prisma generate
 
 # --- Build ---
 FROM base AS build
-RUN npm ci
+# Idem: on build avec les devDependencies (nest, typescript...), puis on prune.
+ENV NODE_ENV=development
+RUN npm ci --include=dev
 COPY . .
 RUN npx prisma generate
 RUN npm run build
