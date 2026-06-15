@@ -3,9 +3,12 @@ export interface VintedSearchFilters {
   searchText?: string | null;
   catalogIds?: number[];
   brandIds?: number[];
+  statusIds?: number[];
+  sizeIds?: number[];
   priceFrom?: number | null;
   priceTo?: number | null;
   order?: string;
+  country?: string;
   perPage?: number;
 }
 
@@ -21,6 +24,20 @@ export interface VintedItem {
   size?: string;
   sellerLogin?: string;
   publishedAt?: Date;
+}
+
+/** Catégorie du catalogue Vinted (aide à trouver les catalog_ids). */
+export interface VintedCatalog {
+  id: number;
+  title: string;
+  /** Sous-catégories éventuelles. */
+  catalogs?: VintedCatalog[];
+}
+
+/** Marque Vinted (aide à trouver les brand_ids). */
+export interface VintedBrand {
+  id: number;
+  title: string;
 }
 
 /** Forme brute (partielle) d'un item dans la réponse catalog/items. */
