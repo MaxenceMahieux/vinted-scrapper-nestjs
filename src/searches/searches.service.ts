@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SavedSearch } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSearchDto } from './dto/create-search.dto';
+import { UpdateSearchDto } from './dto/update-search.dto';
 
 @Injectable()
 export class SearchesService {
@@ -17,6 +18,10 @@ export class SearchesService {
 
   findEnabled(): Promise<SavedSearch[]> {
     return this.prisma.savedSearch.findMany({ where: { enabled: true } });
+  }
+
+  update(id: string, dto: UpdateSearchDto): Promise<SavedSearch> {
+    return this.prisma.savedSearch.update({ where: { id }, data: dto });
   }
 
   remove(id: string): Promise<SavedSearch> {

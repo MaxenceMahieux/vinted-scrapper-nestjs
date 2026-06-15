@@ -10,9 +10,15 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreateSearchDto {
+/**
+ * Partial of {@link CreateSearchDto}: every field is optional so a search can be
+ * updated incrementally via PATCH. Implemented manually because
+ * `@nestjs/mapped-types` is not a project dependency.
+ */
+export class UpdateSearchDto {
+  @IsOptional()
   @IsString()
-  name!: string;
+  name?: string;
 
   @IsOptional()
   @IsBoolean()
