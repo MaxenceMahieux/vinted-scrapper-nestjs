@@ -6,10 +6,11 @@ import {
   HealthIndicatorResult,
 } from '@nestjs/terminus';
 import Redis from 'ioredis';
+import { buildRedisOptions } from '../redis.config';
 
 /**
  * Terminus health indicator that pings Redis using a dedicated ioredis
- * connection built from REDIS_HOST / REDIS_PORT.
+ * connection built from REDIS_HOST / REDIS_PORT (+ optional auth).
  */
 @Injectable()
 export class RedisHealthIndicator
@@ -22,8 +23,7 @@ export class RedisHealthIndicator
   constructor(private readonly config: ConfigService) {
     super();
     this.client = new Redis({
-      host: this.config.get<string>('REDIS_HOST', 'localhost'),
-      port: this.config.get<number>('REDIS_PORT', 6379),
+      ...buildRedisOptions(this.config),
       lazyConnect: true,
       maxRetriesPerRequest: 1,
     });
