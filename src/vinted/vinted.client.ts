@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { RawVintedItem, VintedItem, VintedSearchFilters } from './vinted.types';
 
 /**
@@ -46,8 +47,21 @@ export class VintedClient {
       'VINTED_BASE_URL',
       'https://www.vinted.fr',
     );
+
+    // Proxy optionnel (idéalement résidentiel) pour contourner le blocage
+    // anti-bot par IP. Format: http://user:pass@host:port. Si absent, requêtes
+    // directes (suffisant en local ou sur une IP non bloquée).
+    const proxyUrl = this.config.get<string>('VINTED_PROXY_URL');
+    const httpsAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+    if (proxyUrl) {
+      this.logger.log('Client Vinted: proxy activé');
+    }
+
     this.http = axios.create({
-      timeout: 10_000,
+      timeout: 15_000,
+      httpsAgent,
+      // Laisse l'agent gérer le proxy (désactive la gestion proxy native d'axios).
+      proxy: false,
       headers: {
         'User-Agent': VintedClient.USER_AGENT,
         'Accept-Language': 'fr-FR,fr;q=0.9',
