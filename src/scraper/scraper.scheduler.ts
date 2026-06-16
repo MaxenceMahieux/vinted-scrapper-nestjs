@@ -47,7 +47,9 @@ export class ScraperScheduler {
           name: 'scrape-search',
           data: { searchId: s.id },
           opts: {
-            jobId: `scrape:${s.id}`, // évite les doublons si un tick déborde
+            // BullMQ interdit le caractère ':' dans un jobId (séparateur Redis
+            // interne) -> on utilise '-'. Évite les doublons si un tick déborde.
+            jobId: `scrape-${s.id}`,
             removeOnComplete: true,
             // Important: on retire AUSSI les jobs échoués, sinon le jobId
             // resterait occupé par un job "failed" et tous les ticks suivants
