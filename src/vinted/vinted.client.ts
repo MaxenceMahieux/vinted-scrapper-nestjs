@@ -108,11 +108,7 @@ export class VintedClient {
         headers: { Accept: 'text/html' },
       });
       const setCookie = res.headers['set-cookie'] ?? [];
-      // On ne garde que la paire clé=valeur de chaque cookie (sans les attributs).
-      this.cookie = setCookie
-        .map((c) => c.split(';')[0])
-        .filter((c) => c.includes('='))
-        .join('; ');
+      this.cookie = this.buildCookieHeader(setCookie);
 
       if (!this.cookie) {
         throw new Error('Impossible de récupérer un cookie de session Vinted');
@@ -180,6 +176,31 @@ export class VintedClient {
   }
 
   /**
+   * Construit l'en-tête Cookie à partir des Set-Cookie de la réponse.
+   *
+   * Vinted renvoie certains cookies plusieurs fois (ex. `access_token_web` est
+   * d'abord vidé puis défini). On déduplique donc par nom en gardant la
+   * DERNIÈRE valeur NON VIDE — comme le ferait un navigateur. Sans ça, on
+   * enverrait `access_token_web=; access_token_web=eyJ...` et le serveur lirait
+   * la première occurrence (vide) → 401.
+   */
+  private buildCookieHeader(setCookie: string[]): string {
+    const jar = new Map<string, string>();
+    for (const entry of setCookie) {
+      const pair = entry.split(';')[0];
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const name = pair.slice(0, eq).trim();
+      const value = pair.slice(eq + 1).trim();
+      if (value === '') continue; // ignore les purges de cookie
+      jar.set(name, value); // la dernière valeur non vide l'emporte
+    }
+    return Array.from(jar.entries())
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ');
+  }
+
+  /**
    * Sonde de diagnostic : refait le flux complet (page d'accueil → API) en
    * capturant chaque statut HTTP, sans utiliser le cookie en cache et sans
    * lever d'exception. Permet de savoir précisément où ça casse (IP bloquée,
@@ -213,11 +234,8 @@ export class VintedClient {
       result.homeStatus = home.status;
       const setCookie = home.headers['set-cookie'] ?? [];
       result.cookieNames = setCookie.map((c) => c.split('=')[0]);
-      result.tokenCaptured = result.cookieNames.includes('access_token_web');
-      cookie = setCookie
-        .map((c) => c.split(';')[0])
-        .filter((c) => c.includes('='))
-        .join('; ');
+      cookie = this.buildCookieHeader(setCookie);
+      result.tokenCaptured = cookie.includes('access_token_web=');
     } catch (err) {
       result.homeStatus = (err as Error).message;
       return result;
