@@ -41,7 +41,11 @@ export class ScraperScheduler {
         opts: {
           jobId: `scrape:${s.id}`, // évite les doublons si un tick déborde
           removeOnComplete: true,
-          removeOnFail: 50,
+          // Important: on retire AUSSI les jobs échoués, sinon le jobId resterait
+          // occupé par un job "failed" et tous les ticks suivants seraient
+          // ignorés (dédup par jobId) -> la recherche ne serait plus jamais
+          // rejouée après un premier échec. Avec true, chaque tick réessaie.
+          removeOnFail: true,
         },
       })),
     );

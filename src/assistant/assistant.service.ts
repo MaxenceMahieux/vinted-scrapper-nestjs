@@ -1,9 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AxiosError } from 'axios';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateSearchDto } from '../searches/dto/create-search.dto';
 import { UpdateSearchDto } from '../searches/dto/update-search.dto';
 import { SearchesService } from '../searches/searches.service';
+import { VintedClient } from '../vinted/vinted.client';
 import { VintedDiscoveryService } from '../vinted/vinted.discovery';
 import { ASSISTANT_SYSTEM_PROMPT, ASSISTANT_TOOLS } from './assistant.tools';
 
@@ -37,6 +40,8 @@ export class AssistantService {
     private readonly config: ConfigService,
     private readonly searches: SearchesService,
     private readonly discovery: VintedDiscoveryService,
+    private readonly prisma: PrismaService,
+    private readonly vinted: VintedClient,
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.model = this.config.get<string>('ANTHROPIC_MODEL', 'claude-opus-4-8');
@@ -164,6 +169,40 @@ export class AssistantService {
         case 'delete_search': {
           const removed = await this.searches.remove(this.str(args.id) ?? '');
           return this.ok({ deleted: removed.name });
+        }
+        case 'test_search': {
+          const search = await this.prisma.savedSearch.findUnique({
+            where: { id: this.str(args.id) ?? '' },
+          });
+          if (!search) {
+            return { content: 'Recherche introuvable.', isError: true };
+          }
+          try {
+            const items = await this.vinted.searchCatalog({
+              searchText: search.searchText,
+              catalogIds: search.catalogIds,
+              brandIds: search.brandIds,
+              statusIds: search.statusIds,
+              sizeIds: search.sizeIds,
+              priceFrom: search.priceFrom ? Number(search.priceFrom) : null,
+              priceTo: search.priceTo ? Number(search.priceTo) : null,
+              order: search.order,
+              country: search.country,
+            });
+            return this.ok({
+              vintedOk: true,
+              fetched: items.length,
+              sample: items.slice(0, 3).map((i) => i.title),
+            });
+          } catch (vErr) {
+            const status = (vErr as AxiosError).response?.status;
+            const detail =
+              vErr instanceof Error ? vErr.message : 'erreur inconnue';
+            return {
+              content: `Échec de l'appel Vinted (status ${status ?? 'aucun'}): ${detail}`,
+              isError: true,
+            };
+          }
         }
         case 'search_brands': {
           const brands = await this.discovery.searchBrands(
