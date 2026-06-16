@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSearchDto } from '../searches/dto/create-search.dto';
 import { UpdateSearchDto } from '../searches/dto/update-search.dto';
+import { ScraperService } from '../scraper/scraper.service';
 import { SearchesService } from '../searches/searches.service';
 import { VintedClient } from '../vinted/vinted.client';
 import { VintedDiscoveryService } from '../vinted/vinted.discovery';
@@ -41,6 +42,7 @@ export class AssistantService {
     private readonly discovery: VintedDiscoveryService,
     private readonly prisma: PrismaService,
     private readonly vinted: VintedClient,
+    private readonly scraper: ScraperService,
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.model = this.config.get<string>('ANTHROPIC_MODEL', 'claude-opus-4-8');
@@ -195,6 +197,17 @@ export class AssistantService {
             statutApi: diag.apiStatus,
             annoncesRecuperees: diag.fetched,
             cookies: diag.cookieNames,
+          });
+        }
+        case 'run_search_now': {
+          const result = await this.scraper.runOnce(this.str(args.id) ?? '');
+          return this.ok({
+            recherche: result.searchName,
+            active: result.enabled,
+            annoncesRecuperees: result.fetched,
+            apresFiltres: result.matched,
+            nouvelles: result.fresh,
+            notifiees: result.notified,
           });
         }
         case 'search_brands': {

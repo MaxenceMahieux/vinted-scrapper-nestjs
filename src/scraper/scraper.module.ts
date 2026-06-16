@@ -9,6 +9,7 @@ import { VintedModule } from '../vinted/vinted.module';
 import { SCRAPE_QUEUE } from './scraper.constants';
 import { ScraperProcessor } from './scraper.processor';
 import { ScraperScheduler } from './scraper.scheduler';
+import { ScraperService } from './scraper.service';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ScraperScheduler } from './scraper.scheduler';
     MatchingModule,
     PricingModule,
   ],
-  providers: [ScraperScheduler, ScraperProcessor],
+  providers: [ScraperScheduler, ScraperProcessor, ScraperService],
+  exports: [ScraperService],
 })
 export class ScraperModule {}

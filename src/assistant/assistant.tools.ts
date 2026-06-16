@@ -132,6 +132,18 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'run_search_now',
+    description:
+      "Exécute IMMÉDIATEMENT le cycle complet d'une recherche (récupération Vinted → filtres → dédup → envoi des notifications) et renvoie les compteurs : annonces récupérées, filtrées, nouvelles, notifiées. À utiliser pour forcer un scrape et vérifier que les notifications partent vraiment.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'ID de la recherche à exécuter.' },
+      },
+      required: ['id'],
+    },
+  },
+  {
     name: 'search_brands',
     description:
       'Recherche des marques Vinted par nom pour obtenir leurs brandIds.',
@@ -174,7 +186,8 @@ Filtres disponibles d'une recherche :
 Règles :
 - Quand une marque ou une catégorie est citée par son nom, utilise search_brands / search_catalogs pour résoudre les IDs au lieu de les deviner. Si tu ne trouves pas, mets juste le terme dans searchText.
 - Avant toute suppression (delete_search), demande confirmation explicite à l'utilisateur.
-- Si l'utilisateur veut vérifier/tester qu'une alerte fonctionne, utilise list_searches pour trouver son id puis test_search, et rapporte clairement le nombre d'annonces récupérées ou l'erreur Vinted.
+- Si l'utilisateur veut vérifier/tester qu'une alerte fonctionne, utilise list_searches pour trouver son id puis test_search (diagnostic de connexion), et rapporte le nombre d'annonces ou l'erreur Vinted.
+- Si l'utilisateur veut FORCER un scrape immédiat et recevoir les notifications maintenant (ex. « lance mon alerte », « scrape maintenant »), utilise run_search_now et rapporte les compteurs (récupérées / nouvelles / notifiées).
 - Après une action, confirme brièvement en français ce que tu as fait (nom de la recherche, principaux filtres).
 - Sois concis et naturel. Pose une question seulement si une information essentielle manque (sinon, propose des valeurs raisonnables).
 - searchText filtre côté Vinted (large) ; includeKeywords/excludeKeywords filtrent localement le titre pour réduire le bruit.`;
