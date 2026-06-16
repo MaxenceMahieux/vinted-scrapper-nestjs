@@ -199,6 +199,9 @@ export class AssistantService {
             cookies: diag.cookieNames,
           });
         }
+        case 'scrape_status': {
+          return this.ok(await this.scraper.getDiagnostics());
+        }
         case 'run_search_now': {
           const result = await this.scraper.runOnce(this.str(args.id) ?? '');
           return this.ok({

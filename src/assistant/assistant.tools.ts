@@ -144,6 +144,12 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'scrape_status',
+    description:
+      'Diagnostic du planificateur automatique : nombre de ticks du cron, nombre de jobs traités par le worker BullMQ, et état de la file. Sert à vérifier que le scraping tourne en continu (pas seulement en manuel).',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'search_brands',
     description:
       'Recherche des marques Vinted par nom pour obtenir leurs brandIds.',
@@ -188,6 +194,7 @@ Règles :
 - Avant toute suppression (delete_search), demande confirmation explicite à l'utilisateur.
 - Si l'utilisateur veut vérifier/tester qu'une alerte fonctionne, utilise list_searches pour trouver son id puis test_search (diagnostic de connexion), et rapporte le nombre d'annonces ou l'erreur Vinted.
 - Si l'utilisateur veut FORCER un scrape immédiat et recevoir les notifications maintenant (ex. « lance mon alerte », « scrape maintenant »), utilise run_search_now et rapporte les compteurs (récupérées / nouvelles / notifiées).
+- Si l'utilisateur se demande si le scraping tourne en continu / automatiquement (ex. « est-ce que ça tourne tout seul ? », « pourquoi pas de notif auto »), utilise scrape_status et rapporte les ticks du cron et les jobs traités par le worker.
 - Après une action, confirme brièvement en français ce que tu as fait (nom de la recherche, principaux filtres).
 - Sois concis et naturel. Pose une question seulement si une information essentielle manque (sinon, propose des valeurs raisonnables).
 - searchText filtre côté Vinted (large) ; includeKeywords/excludeKeywords filtrent localement le titre pour réduire le bruit.`;

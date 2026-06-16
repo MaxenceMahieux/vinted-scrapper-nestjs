@@ -14,6 +14,7 @@ export class ScraperProcessor extends WorkerHost {
   }
 
   async process(job: Job<ScrapeJobData>): Promise<void> {
+    this.scraper.recordWorkerRun();
     await this.scraper.runOnce(job.data.searchId);
   }
 }

@@ -1,5 +1,8 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SavedSearch } from '@prisma/client';
+import { Queue } from 'bullmq';
 import {
   EnrichedVintedItem,
   ListingsService,
@@ -12,6 +15,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchesService } from '../searches/searches.service';
 import { VintedClient } from '../vinted/vinted.client';
+import { SCRAPE_QUEUE } from './scraper.constants';
 
 /** Résumé d'un cycle de scraping pour une recherche. */
 export interface ScrapeRunResult {
@@ -31,6 +35,12 @@ export interface ScrapeRunResult {
 export class ScraperService {
   private readonly logger = new Logger(ScraperService.name);
 
+  // Compteurs d'observabilité pour distinguer cron (enfilage) et worker (traitement).
+  private ticks = 0;
+  private lastTickAt: string | null = null;
+  private workerRuns = 0;
+  private lastWorkerRunAt: string | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly vinted: VintedClient,
@@ -39,7 +49,40 @@ export class ScraperService {
     private readonly searches: SearchesService,
     private readonly matching: MatchingService,
     private readonly pricing: PricingService,
+    private readonly config: ConfigService,
+    @InjectQueue(SCRAPE_QUEUE) private readonly queue: Queue,
   ) {}
+
+  /** Appelé par le cron à chaque tick d'enfilage. */
+  recordTick(): void {
+    this.ticks += 1;
+    this.lastTickAt = new Date().toISOString();
+  }
+
+  /** Appelé par le worker BullMQ à chaque job réellement traité. */
+  recordWorkerRun(): void {
+    this.workerRuns += 1;
+    this.lastWorkerRunAt = new Date().toISOString();
+  }
+
+  /** Diagnostic : compteurs cron/worker + état de la file BullMQ. */
+  async getDiagnostics(): Promise<Record<string, unknown>> {
+    const counts = await this.queue.getJobCounts(
+      'waiting',
+      'active',
+      'completed',
+      'failed',
+      'delayed',
+    );
+    return {
+      cron: this.config.get<string>('SCRAPE_CRON', '*/60 * * * * *'),
+      cronTicks: this.ticks,
+      dernierTick: this.lastTickAt,
+      jobsTraitesParWorker: this.workerRuns,
+      dernierTraitement: this.lastWorkerRunAt,
+      file: counts,
+    };
+  }
 
   /**
    * Exécute un cycle complet : Vinted → filtrage → observations → scoring →

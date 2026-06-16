@@ -5,6 +5,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { Queue } from 'bullmq';
 import { CronJob } from 'cron';
 import { SearchesService } from '../searches/searches.service';
+import { ScraperService } from './scraper.service';
 import { SCRAPE_QUEUE, ScrapeJobData } from './scraper.constants';
 
 /**
@@ -22,6 +23,7 @@ export class ScraperScheduler {
     private readonly searches: SearchesService,
     private readonly config: ConfigService,
     private readonly registry: SchedulerRegistry,
+    private readonly scraper: ScraperService,
   ) {
     const expression = this.config.get<string>('SCRAPE_CRON', '*/60 * * * * *');
     const job = new CronJob(expression, () => this.enqueueAll());
@@ -31,8 +33,12 @@ export class ScraperScheduler {
   }
 
   private async enqueueAll(): Promise<void> {
+    this.scraper.recordTick();
     const searches = await this.searches.findEnabled();
-    if (!searches.length) return;
+    if (!searches.length) {
+      this.logger.log('Tick scraping: aucune recherche active');
+      return;
+    }
 
     await this.queue.addBulk(
       searches.map((s) => ({
@@ -49,6 +55,8 @@ export class ScraperScheduler {
         },
       })),
     );
-    this.logger.debug(`${searches.length} recherche(s) enfilée(s)`);
+    this.logger.log(
+      `Tick scraping: ${searches.length} recherche(s) enfilée(s)`,
+    );
   }
 }
