@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AxiosError } from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSearchDto } from '../searches/dto/create-search.dto';
 import { UpdateSearchDto } from '../searches/dto/update-search.dto';
@@ -177,32 +176,26 @@ export class AssistantService {
           if (!search) {
             return { content: 'Recherche introuvable.', isError: true };
           }
-          try {
-            const items = await this.vinted.searchCatalog({
-              searchText: search.searchText,
-              catalogIds: search.catalogIds,
-              brandIds: search.brandIds,
-              statusIds: search.statusIds,
-              sizeIds: search.sizeIds,
-              priceFrom: search.priceFrom ? Number(search.priceFrom) : null,
-              priceTo: search.priceTo ? Number(search.priceTo) : null,
-              order: search.order,
-              country: search.country,
-            });
-            return this.ok({
-              vintedOk: true,
-              fetched: items.length,
-              sample: items.slice(0, 3).map((i) => i.title),
-            });
-          } catch (vErr) {
-            const status = (vErr as AxiosError).response?.status;
-            const detail =
-              vErr instanceof Error ? vErr.message : 'erreur inconnue';
-            return {
-              content: `Échec de l'appel Vinted (status ${status ?? 'aucun'}): ${detail}`,
-              isError: true,
-            };
-          }
+          const diag = await this.vinted.selfTest({
+            searchText: search.searchText,
+            catalogIds: search.catalogIds,
+            brandIds: search.brandIds,
+            statusIds: search.statusIds,
+            sizeIds: search.sizeIds,
+            priceFrom: search.priceFrom ? Number(search.priceFrom) : null,
+            priceTo: search.priceTo ? Number(search.priceTo) : null,
+            order: search.order,
+            country: search.country,
+          });
+          return this.ok({
+            vintedOk: diag.apiStatus === 200,
+            proxyActif: diag.proxy,
+            statutAccueil: diag.homeStatus,
+            tokenRecupere: diag.tokenCaptured,
+            statutApi: diag.apiStatus,
+            annoncesRecuperees: diag.fetched,
+            cookies: diag.cookieNames,
+          });
         }
         case 'search_brands': {
           const brands = await this.discovery.searchBrands(

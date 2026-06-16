@@ -180,6 +180,69 @@ export class VintedClient {
   }
 
   /**
+   * Sonde de diagnostic : refait le flux complet (page d'accueil → API) en
+   * capturant chaque statut HTTP, sans utiliser le cookie en cache et sans
+   * lever d'exception. Permet de savoir précisément où ça casse (IP bloquée,
+   * token absent, token rejeté).
+   */
+  async selfTest(filters: VintedSearchFilters): Promise<{
+    proxy: boolean;
+    homeStatus: number | string;
+    tokenCaptured: boolean;
+    cookieNames: string[];
+    apiStatus: number | string;
+    fetched: number;
+  }> {
+    const baseUrl = this.resolveBaseUrl(filters.country);
+    const result = {
+      proxy: Boolean(this.config.get<string>('VINTED_PROXY_URL')),
+      homeStatus: 'n/a' as number | string,
+      tokenCaptured: false,
+      cookieNames: [] as string[],
+      apiStatus: 'n/a' as number | string,
+      fetched: 0,
+    };
+
+    // 1) Page d'accueil → cookies (validateStatus: on ne lève jamais).
+    let cookie = '';
+    try {
+      const home = await this.http.get(baseUrl, {
+        headers: { Accept: 'text/html' },
+        validateStatus: () => true,
+      });
+      result.homeStatus = home.status;
+      const setCookie = home.headers['set-cookie'] ?? [];
+      result.cookieNames = setCookie.map((c) => c.split('=')[0]);
+      result.tokenCaptured = result.cookieNames.includes('access_token_web');
+      cookie = setCookie
+        .map((c) => c.split(';')[0])
+        .filter((c) => c.includes('='))
+        .join('; ');
+    } catch (err) {
+      result.homeStatus = (err as Error).message;
+      return result;
+    }
+
+    // 2) Appel API avec ces cookies.
+    try {
+      const api = await this.http.get<{ items?: RawVintedItem[] }>(
+        `${baseUrl}/api/v2/catalog/items`,
+        {
+          params: this.buildCatalogParams(filters),
+          headers: { Cookie: cookie },
+          validateStatus: () => true,
+        },
+      );
+      result.apiStatus = api.status;
+      result.fetched = api.data?.items?.length ?? 0;
+    } catch (err) {
+      result.apiStatus = (err as Error).message;
+    }
+
+    return result;
+  }
+
+  /**
    * Interroge le catalogue. Applique throttle, retry auth et backoff 429 via
    * authenticatedGet.
    */
