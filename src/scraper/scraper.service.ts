@@ -40,6 +40,8 @@ export class ScraperService {
   private lastTickAt: string | null = null;
   private workerRuns = 0;
   private lastWorkerRunAt: string | null = null;
+  private lastEnqueueCount = 0;
+  private lastEnqueueError: string | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -65,6 +67,15 @@ export class ScraperService {
     this.lastWorkerRunAt = new Date().toISOString();
   }
 
+  /**
+   * Appelé par le cron après tentative d'enfilage. `count` = nombre de
+   * recherches enfilées (0 = aucune active, -1 = erreur).
+   */
+  recordEnqueue(count: number, error?: string): void {
+    this.lastEnqueueCount = count;
+    this.lastEnqueueError = error ?? null;
+  }
+
   /** Diagnostic : compteurs cron/worker + état de la file BullMQ. */
   async getDiagnostics(): Promise<Record<string, unknown>> {
     const counts = await this.queue.getJobCounts(
@@ -80,6 +91,8 @@ export class ScraperService {
       dernierTick: this.lastTickAt,
       jobsTraitesParWorker: this.workerRuns,
       dernierTraitement: this.lastWorkerRunAt,
+      enfileesDernierTick: this.lastEnqueueCount,
+      derniereErreurEnfilage: this.lastEnqueueError,
       file: counts,
     };
   }

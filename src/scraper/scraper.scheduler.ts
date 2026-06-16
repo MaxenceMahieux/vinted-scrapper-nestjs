@@ -34,29 +34,39 @@ export class ScraperScheduler {
 
   private async enqueueAll(): Promise<void> {
     this.scraper.recordTick();
-    const searches = await this.searches.findEnabled();
-    if (!searches.length) {
-      this.logger.log('Tick scraping: aucune recherche active');
-      return;
-    }
+    try {
+      const searches = await this.searches.findEnabled();
+      if (!searches.length) {
+        this.scraper.recordEnqueue(0);
+        this.logger.log('Tick scraping: aucune recherche active');
+        return;
+      }
 
-    await this.queue.addBulk(
-      searches.map((s) => ({
-        name: 'scrape-search',
-        data: { searchId: s.id },
-        opts: {
-          jobId: `scrape:${s.id}`, // évite les doublons si un tick déborde
-          removeOnComplete: true,
-          // Important: on retire AUSSI les jobs échoués, sinon le jobId resterait
-          // occupé par un job "failed" et tous les ticks suivants seraient
-          // ignorés (dédup par jobId) -> la recherche ne serait plus jamais
-          // rejouée après un premier échec. Avec true, chaque tick réessaie.
-          removeOnFail: true,
-        },
-      })),
-    );
-    this.logger.log(
-      `Tick scraping: ${searches.length} recherche(s) enfilée(s)`,
-    );
+      await this.queue.addBulk(
+        searches.map((s) => ({
+          name: 'scrape-search',
+          data: { searchId: s.id },
+          opts: {
+            jobId: `scrape:${s.id}`, // évite les doublons si un tick déborde
+            removeOnComplete: true,
+            // Important: on retire AUSSI les jobs échoués, sinon le jobId
+            // resterait occupé par un job "failed" et tous les ticks suivants
+            // seraient ignorés (dédup par jobId).
+            removeOnFail: true,
+          },
+        })),
+      );
+      this.scraper.recordEnqueue(searches.length);
+      this.logger.log(
+        `Tick scraping: ${searches.length} recherche(s) enfilée(s)`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.scraper.recordEnqueue(-1, message);
+      this.logger.error(
+        `Échec de l'enfilage des jobs de scraping: ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
   }
 }
