@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ScraperModule } from './scraper/scraper.module';
 import { SearchesModule } from './searches/searches.module';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
+import { TrackingModule } from './tracking/tracking.module';
 import { VintedModule } from './vinted/vinted.module';
 
 @Module({
@@ -46,6 +47,7 @@ import { VintedModule } from './vinted/vinted.module';
     NotifierModule,
     MatchingModule,
     PricingModule,
+    TrackingModule,
     ScraperModule,
     TelegramBotModule,
     HealthModule,

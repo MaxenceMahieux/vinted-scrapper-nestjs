@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Listing } from '@prisma/client';
+import { Listing, SavedSearch } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VintedItem } from '../vinted/vinted.types';
+
+/** Annonce accompagnée de la recherche qui l'a fait remonter (pour le pays). */
+export type ListingWithSearch = Listing & { search: SavedSearch };
 
 /**
  * Item Vinted enrichi des données de pricing/scoring calculées en amont
@@ -39,11 +42,14 @@ export class ListingsService {
             vintedItemId: BigInt(item.id),
             title: item.title,
             price: item.price,
+            totalPrice: item.totalPrice ?? undefined,
             currency: item.currency,
             url: item.url,
             photoUrl: item.photoUrl,
             brand: item.brand,
             size: item.size,
+            condition: item.condition,
+            statusId: item.statusId,
             sellerLogin: item.sellerLogin,
             publishedAt: item.publishedAt,
             modelKey: item.modelKey ?? undefined,
@@ -65,6 +71,22 @@ export class ListingsService {
     return this.prisma.listing.updateMany({
       where: { id: { in: ids } },
       data: { notified: true },
+    });
+  }
+
+  /** Récupère une annonce avec sa recherche (pour résoudre le pays, l'item…). */
+  findByIdWithSearch(id: string): Promise<ListingWithSearch | null> {
+    return this.prisma.listing.findUnique({
+      where: { id },
+      include: { search: true },
+    });
+  }
+
+  /** Marque (ou démarque) une annonce comme favorite. */
+  setFavorite(id: string, isFavorite: boolean): Promise<Listing> {
+    return this.prisma.listing.update({
+      where: { id },
+      data: { isFavorite },
     });
   }
 }

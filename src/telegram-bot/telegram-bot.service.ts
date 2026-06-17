@@ -9,9 +9,11 @@ import { Context, Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import { AssistantService } from '../assistant/assistant.service';
+import { ListingsService } from '../listings/listings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchesService } from '../searches/searches.service';
 import { CreateSearchDto } from '../searches/dto/create-search.dto';
+import { TrackingService } from '../tracking/tracking.service';
 
 /**
  * Telegram control-plane bot (pilotage), separate from the notification channel.
@@ -32,6 +34,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     private readonly searches: SearchesService,
     private readonly prisma: PrismaService,
     private readonly assistant: AssistantService,
+    private readonly listings: ListingsService,
+    private readonly tracking: TrackingService,
   ) {
     this.token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
     this.allowedChatId = this.config.get<string>('TELEGRAM_CHAT_ID');
@@ -64,6 +68,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     bot.command('pause', (ctx) => this.handlePause(ctx));
     bot.command('resume', (ctx) => this.handleResume(ctx));
     bot.command('delete', (ctx) => this.handleDelete(ctx));
+    bot.command('tracked', (ctx) => this.handleTracked(ctx));
+
+    // Boutons inline des notifications (achat 1-clic / veille).
+    bot.action(/^t:(.+)$/, (ctx) => this.handleTrack(ctx));
+    bot.action(/^f:(.+)$/, (ctx) => this.handleFavorite(ctx));
+    bot.action(/^m:(.+)$/, (ctx) => this.handleMute(ctx));
+    bot.action(/^u:(.+)$/, (ctx) => this.handleUntrack(ctx));
 
     // Tout message texte non-commande est routé vers l'assistant IA.
     bot.on(message('text'), (ctx) => this.handleText(ctx));
@@ -132,6 +143,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       '/pause <id> - disable a search',
       '/resume <id> - enable a search',
       '/delete <id> - delete a search',
+      '/tracked - list items whose price you follow',
+      '',
+      'Sous chaque alerte : 🔗 Voir · 📉 Suivre le prix · ❤️ Favori · 🔕 Ignorer le vendeur',
       '',
       'Ou écris simplement en français ce que tu veux suivre,',
       "l'assistant IA s'occupe du reste. Ex. :",
@@ -245,6 +259,99 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async handleTracked(ctx: TextContext): Promise<void> {
+    try {
+      const chatId = ctx.chat.id.toString();
+      const tracked = await this.tracking.listActive(chatId);
+      if (tracked.length === 0) {
+        await ctx.reply(
+          'Aucun article suivi. Touche « 📉 Suivre le prix » sous une alerte.',
+        );
+        return;
+      }
+      const lines = tracked.map(
+        (t) =>
+          `- ${t.title}\n  ${Number(t.lastPrice)} ${t.currency} · ${t.url}`,
+      );
+      await ctx.reply(lines.join('\n'));
+    } catch (err) {
+      await this.replyError(ctx, 'Failed to list tracked items', err);
+    }
+  }
+
+  /** Bouton « 📉 Suivre le prix » : démarre le suivi de l'annonce. */
+  private async handleTrack(ctx: CallbackContext): Promise<void> {
+    try {
+      const listing = await this.listings.findByIdWithSearch(ctx.match[1]);
+      if (!listing) {
+        await ctx.answerCbQuery('Annonce introuvable');
+        return;
+      }
+      const chatId = (ctx.chat?.id ?? ctx.from?.id)?.toString();
+      if (!chatId) {
+        await ctx.answerCbQuery('Chat inconnu');
+        return;
+      }
+      await this.tracking.track({
+        vintedItemId: Number(listing.vintedItemId),
+        chatId,
+        title: listing.title,
+        url: listing.url,
+        photoUrl: listing.photoUrl,
+        currency: listing.currency,
+        country: listing.search.country,
+        price: Number(listing.totalPrice ?? listing.price),
+      });
+      await ctx.answerCbQuery('📉 Suivi du prix activé');
+    } catch (err) {
+      await this.answerError(ctx, 'Failed to track item', err);
+    }
+  }
+
+  /** Bouton « ❤️ Favori » : marque l'annonce comme favorite. */
+  private async handleFavorite(ctx: CallbackContext): Promise<void> {
+    try {
+      await this.listings.setFavorite(ctx.match[1], true);
+      await ctx.answerCbQuery('❤️ Ajouté aux favoris');
+    } catch (err) {
+      await this.answerError(ctx, 'Failed to favorite listing', err);
+    }
+  }
+
+  /** Bouton « 🔕 Ignorer ce vendeur » : coupe les futures alertes du vendeur. */
+  private async handleMute(ctx: CallbackContext): Promise<void> {
+    try {
+      const listing = await this.listings.findByIdWithSearch(ctx.match[1]);
+      if (!listing?.sellerLogin) {
+        await ctx.answerCbQuery('Vendeur inconnu');
+        return;
+      }
+      await this.tracking.muteSeller(listing.sellerLogin);
+      await ctx.answerCbQuery(`🔕 ${listing.sellerLogin} ignoré`);
+    } catch (err) {
+      await this.answerError(ctx, 'Failed to mute seller', err);
+    }
+  }
+
+  /** Bouton « 🛑 Stop suivi » : arrête le suivi de prix. */
+  private async handleUntrack(ctx: CallbackContext): Promise<void> {
+    try {
+      await this.tracking.untrack(ctx.match[1]);
+      await ctx.answerCbQuery('🛑 Suivi arrêté');
+    } catch (err) {
+      await this.answerError(ctx, 'Failed to untrack item', err);
+    }
+  }
+
+  private async answerError(
+    ctx: CallbackContext,
+    fallback: string,
+    err: unknown,
+  ): Promise<void> {
+    this.logger.error(fallback, err instanceof Error ? err.stack : String(err));
+    await ctx.answerCbQuery('Une erreur est survenue.');
+  }
+
   /** Returns the text after the command, or undefined when empty. */
   private extractArgs(text: string): string | undefined {
     const trimmed = text.trim();
@@ -288,4 +395,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 /** Telegraf context narrowed to a text command message. */
 type TextContext = Context<Update.MessageUpdate> & {
   message: { text: string };
+};
+
+/** Telegraf context d'un clic sur bouton inline (action regex). */
+type CallbackContext = Context<Update.CallbackQueryUpdate> & {
+  match: RegExpExecArray;
 };

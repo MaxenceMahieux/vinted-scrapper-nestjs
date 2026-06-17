@@ -14,6 +14,7 @@ import { normalizeModelKey } from '../pricing/model-key.util';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchesService } from '../searches/searches.service';
+import { TrackingService } from '../tracking/tracking.service';
 import { VintedClient } from '../vinted/vinted.client';
 import { SCRAPE_QUEUE } from './scraper.constants';
 
@@ -51,6 +52,7 @@ export class ScraperService {
     private readonly searches: SearchesService,
     private readonly matching: MatchingService,
     private readonly pricing: PricingService,
+    private readonly tracking: TrackingService,
     private readonly config: ConfigService,
     @InjectQueue(SCRAPE_QUEUE) private readonly queue: Queue,
   ) {}
@@ -125,11 +127,17 @@ export class ScraperService {
       country: search.country,
     });
 
-    // 2) Filtrage local include/exclude.
-    const items = this.matching.filter(rawItems, {
+    // 2) Filtrage local include/exclude, puis exclusion des vendeurs ignorés.
+    const matched = this.matching.filter(rawItems, {
       includeKeywords: search.includeKeywords,
       excludeKeywords: search.excludeKeywords,
     });
+    const muted = await this.tracking.getMutedLogins();
+    const items = muted.size
+      ? matched.filter(
+          (item) => !item.sellerLogin || !muted.has(item.sellerLogin),
+        )
+      : matched;
 
     if (!items.length) {
       await this.searches.markRun(searchId);
@@ -143,22 +151,27 @@ export class ScraperService {
       };
     }
 
-    // 3) Observations de prix.
+    // 3) Observations de prix (sur le prix effectif acheteur, segmenté par état).
     await this.pricing.recordObservations(
       searchId,
       items.map((item) => ({
         vintedItemId: item.id,
-        price: item.price,
+        price: item.totalPrice,
         currency: item.currency,
         modelKey: normalizeModelKey(item.title),
+        statusId: item.statusId,
       })),
     );
 
-    // 4) Enrichissement + scoring.
+    // 4) Enrichissement + scoring (comparaison sur le prix effectif et l'état).
     const enriched: EnrichedVintedItem[] = [];
     for (const item of items) {
       const modelKey = normalizeModelKey(item.title);
-      const deal = await this.pricing.scoreDeal(item.price, modelKey);
+      const deal = await this.pricing.scoreDeal(
+        item.totalPrice,
+        modelKey,
+        item.statusId,
+      );
       enriched.push({
         ...item,
         modelKey,
@@ -196,13 +209,17 @@ export class ScraperService {
         searchName: search.name,
         title: listing.title,
         price: Number(listing.price),
+        totalPrice:
+          listing.totalPrice != null ? Number(listing.totalPrice) : undefined,
         currency: listing.currency,
         url: listing.url,
         brand: listing.brand ?? undefined,
         size: listing.size ?? undefined,
+        condition: listing.condition ?? undefined,
         photoUrl: listing.photoUrl ?? undefined,
         isDeal: listing.isDeal,
         dealScore: listing.dealScore ?? undefined,
+        listingId: listing.id,
       };
       await this.notifier.dispatch(search.channels, payload);
     }

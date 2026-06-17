@@ -5,6 +5,7 @@ import { MatchingModule } from '../matching/matching.module';
 import { NotifierModule } from '../notifier/notifier.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { SearchesModule } from '../searches/searches.module';
+import { TrackingModule } from '../tracking/tracking.module';
 import { VintedModule } from '../vinted/vinted.module';
 import { SCRAPE_QUEUE } from './scraper.constants';
 import { ScraperProcessor } from './scraper.processor';
@@ -20,6 +21,7 @@ import { ScraperService } from './scraper.service';
     SearchesModule,
     MatchingModule,
     PricingModule,
+    TrackingModule,
   ],
   providers: [ScraperScheduler, ScraperProcessor, ScraperService],
   exports: [ScraperService],

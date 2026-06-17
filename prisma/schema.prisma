@@ -47,17 +47,21 @@ model Listing {
 
   title        String
   price        Decimal     @db.Decimal(10, 2)
+  totalPrice   Decimal?    @db.Decimal(10, 2) // prix effectif acheteur (article + protection)
   currency     String      @default("EUR")
   url          String
   photoUrl     String?
   brand        String?
   size         String?
+  condition    String? // libelle d'etat Vinted (ex. "Tres bon etat")
+  statusId     Int? // id d'etat Vinted (pour segmenter le pricing)
   sellerLogin  String?
   publishedAt  DateTime?
 
   modelKey     String? // cle de modele normalisee (pricing)
   dealScore    Float?
   isDeal       Boolean     @default(false)
+  isFavorite   Boolean     @default(false) // marque "favori" depuis Telegram
 
   notified     Boolean     @default(false)
   seenAt       DateTime    @default(now())
@@ -72,6 +76,7 @@ model PriceObservation {
   id           String       @id @default(cuid())
   vintedItemId BigInt
   modelKey     String
+  statusId     Int          @default(0) // etat Vinted (0 = inconnu) pour stats par condition
   price        Decimal      @db.Decimal(10, 2)
   currency     String       @default("EUR")
   search       SavedSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
@@ -82,11 +87,41 @@ model PriceObservation {
   @@index([observedAt])
 }
 
-/// Statistiques de prix agrégées par modèle (recalculées périodiquement).
+/// Statistiques de prix agrégées par modèle ET par état (recalculées périodiquement).
+/// La ligne statusId = 0 est l'agrégat tous états confondus (repli quand une
+/// condition précise manque d'échantillons).
 model PriceStat {
-  modelKey  String   @id
+  modelKey  String
+  statusId  Int      @default(0)
   median    Decimal  @db.Decimal(10, 2)
   p25       Decimal  @db.Decimal(10, 2)
   samples   Int
   updatedAt DateTime @updatedAt
+
+  @@id([modelKey, statusId])
+}
+
+/// Un article suivi individuellement pour être alerté en cas de baisse de prix.
+model TrackedItem {
+  id            String   @id @default(cuid())
+  vintedItemId  BigInt   @unique
+  chatId        String // chat Telegram qui suit l'article
+  title         String
+  url           String
+  photoUrl      String?
+  currency      String   @default("EUR")
+  country       String   @default("fr")
+  initialPrice  Decimal  @db.Decimal(10, 2)
+  lastPrice     Decimal  @db.Decimal(10, 2)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  lastCheckedAt DateTime?
+
+  @@index([active])
+}
+
+/// Un vendeur dont les annonces ne doivent plus déclencher de notification.
+model MutedSeller {
+  sellerLogin String   @id
+  createdAt   DateTime @default(now())
 }

@@ -18,6 +18,7 @@ describe('MatchingService', () => {
     id,
     title,
     price: 10,
+    totalPrice: 10,
     currency: 'EUR',
     url: `https://www.vinted.fr/items/${id}`,
   });

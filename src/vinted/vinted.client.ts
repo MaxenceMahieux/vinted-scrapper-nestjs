@@ -2,7 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { RawVintedItem, VintedItem, VintedSearchFilters } from './vinted.types';
+import {
+  RawVintedItem,
+  RawVintedItemDetail,
+  VintedAmount,
+  VintedItem,
+  VintedItemDetail,
+  VintedSearchFilters,
+} from './vinted.types';
 
 /**
  * Client de l'API interne (non officielle) de Vinted.
@@ -293,19 +300,74 @@ export class VintedClient {
     return params;
   }
 
+  /**
+   * Récupère le détail d'un article par son id (pour le suivi de prix). Renvoie
+   * null si l'annonce a disparu (404). Le prix renvoyé est le prix effectif
+   * (article + protection acheteurs) afin de rester cohérent avec le scoring.
+   */
+  async getItem(
+    id: number,
+    country?: string,
+  ): Promise<VintedItemDetail | null> {
+    try {
+      const data = await this.authenticatedGet<{ item?: RawVintedItemDetail }>(
+        `/api/v2/items/${id}`,
+        { country },
+      );
+      const raw = data?.item;
+      if (!raw) return null;
+
+      const itemPrice = raw.price ? Number(raw.price.amount) : 0;
+      return {
+        id: raw.id,
+        title: raw.title,
+        url: raw.url,
+        price: VintedClient.parseAmount(raw.total_item_price) ?? itemPrice,
+        currency: raw.price?.currency_code ?? raw.currency ?? 'EUR',
+        photoUrl: raw.photos?.[0]?.url,
+        available: !raw.is_closed && !raw.is_hidden,
+      };
+    } catch (err) {
+      if ((err as AxiosError).response?.status === 404) return null;
+      throw err;
+    }
+  }
+
   private normalize(raw: RawVintedItem): VintedItem {
     const ts = raw.photo?.high_resolution?.timestamp;
+    const price = raw.price ? Number(raw.price.amount) : 0;
     return {
       id: raw.id,
       title: raw.title,
-      price: raw.price ? Number(raw.price.amount) : 0,
+      price,
+      totalPrice: VintedClient.parseAmount(raw.total_item_price) ?? price,
       currency: raw.price?.currency_code ?? 'EUR',
       url: raw.url,
       photoUrl: raw.photo?.url,
       brand: raw.brand_title,
       size: raw.size_title,
+      condition: raw.status,
+      statusId: raw.status_id,
       sellerLogin: raw.user?.login,
       publishedAt: ts ? new Date(ts * 1000) : undefined,
     };
+  }
+
+  /**
+   * Extrait un montant numérique des formes hétérogènes renvoyées par Vinted
+   * (objet `{ amount }`, nombre ou chaîne). Renvoie null si non exploitable.
+   */
+  private static parseAmount(value: VintedAmount | undefined): number | null {
+    if (value == null) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    if (typeof value.amount === 'string') {
+      const n = Number(value.amount);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
   }
 }

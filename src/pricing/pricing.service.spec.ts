@@ -155,7 +155,10 @@ describe('PricingService', () => {
       expect(prisma.priceStat.upsert).toHaveBeenCalledTimes(1);
       const call = upsertArg(prisma.priceStat.upsert);
 
-      expect(call.where).toEqual({ modelKey: 'm1' });
+      expect(call.where).toEqual({
+        modelKey_statusId: { modelKey: 'm1', statusId: 0 },
+      });
+      expect(call.create.statusId).toBe(0);
       // Médiane (q=0.5) sur [10,20,30,40,50] → rang 2 → 30.
       expect(createDecimal(call, 'median')).toBeCloseTo(30);
       // p25 (q=0.25) → rang 1 → 20.
@@ -181,13 +184,71 @@ describe('PricingService', () => {
 
     it('upserts one stat per distinct model key', async () => {
       prisma.priceObservation.findMany.mockResolvedValue([
-        { modelKey: 'm1', price: new Prisma.Decimal(10) },
-        { modelKey: 'm2', price: new Prisma.Decimal(20) },
+        { modelKey: 'm1', statusId: 0, price: new Prisma.Decimal(10) },
+        { modelKey: 'm2', statusId: 0, price: new Prisma.Decimal(20) },
       ]);
 
       await service.recomputeAllStats();
 
       expect(prisma.priceStat.upsert).toHaveBeenCalledTimes(2);
+    });
+
+    it('builds an aggregate (statusId 0) plus a per-condition bucket', async () => {
+      // Deux observations d'état 6, une d'état 9 → agrégat + 2 buckets états.
+      prisma.priceObservation.findMany.mockResolvedValue([
+        { modelKey: 'm1', statusId: 6, price: new Prisma.Decimal(10) },
+        { modelKey: 'm1', statusId: 6, price: new Prisma.Decimal(20) },
+        { modelKey: 'm1', statusId: 9, price: new Prisma.Decimal(30) },
+      ]);
+
+      await service.recomputeAllStats();
+
+      const buckets = (
+        prisma.priceStat.upsert.mock.calls as [Prisma.PriceStatUpsertArgs][]
+      ).map(([arg]) => ({
+        statusId: arg.create.statusId,
+        samples: arg.create.samples,
+      }));
+
+      // Agrégat tous états (3 échantillons) + état 6 (2) + état 9 (1).
+      expect(buckets).toEqual(
+        expect.arrayContaining([
+          { statusId: 0, samples: 3 },
+          { statusId: 6, samples: 2 },
+          { statusId: 9, samples: 1 },
+        ]),
+      );
+    });
+  });
+
+  describe('scoreDeal (condition-aware reference)', () => {
+    it('prefers the per-condition stat when it has enough samples', async () => {
+      // Stat condition (statusId 9) fiable : médiane 200 → ratio 0.5 → deal.
+      prisma.priceStat.findUnique.mockResolvedValue(makeStat('m1', 200, 8));
+
+      const result = await service.scoreDeal(100, 'm1', 9);
+
+      expect(prisma.priceStat.findUnique).toHaveBeenCalledWith({
+        where: { modelKey_statusId: { modelKey: 'm1', statusId: 9 } },
+      });
+      expect(result.ref).toBe(200);
+      expect(result.isDeal).toBe(true);
+    });
+
+    it('falls back to the aggregate when the condition lacks samples', async () => {
+      prisma.priceStat.findUnique
+        // 1er appel : stat condition trop maigre (2 échantillons).
+        .mockResolvedValueOnce(makeStat('m1', 999, 2))
+        // 2e appel : agrégat fiable.
+        .mockResolvedValueOnce(makeStat('m1', 100, 20));
+
+      const result = await service.scoreDeal(50, 'm1', 9);
+
+      expect(prisma.priceStat.findUnique).toHaveBeenLastCalledWith({
+        where: { modelKey_statusId: { modelKey: 'm1', statusId: 0 } },
+      });
+      expect(result.ref).toBe(100);
+      expect(result.isDeal).toBe(true);
     });
   });
 });
