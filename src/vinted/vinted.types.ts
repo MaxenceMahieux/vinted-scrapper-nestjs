@@ -10,6 +10,29 @@ export interface VintedSearchFilters {
   order?: string;
   country?: string;
   perPage?: number;
+  /**
+   * Facettes génériques : map { "<param>_ids": [ids] } fusionnée telle quelle
+   * dans la query (material_ids, color_ids, …). Permet d'exploiter n'importe
+   * quel filtre Vinted sans champ typé dédié.
+   */
+  facets?: Record<string, number[]> | null;
+}
+
+/** Une option sélectionnable d'une facette (ex. « Cuir » dans « Matière »). */
+export interface VintedFacetOption {
+  id: number;
+  title: string;
+}
+
+/** Une facette de filtre découverte pour une catégorie. */
+export interface VintedFacet {
+  /** Code Vinted de la facette (ex. « material »). */
+  code: string;
+  /** Clé de query param à placer dans `facets` (ex. « material_ids »). */
+  paramKey: string;
+  /** Libellé affiché (ex. « Matière »). */
+  title: string;
+  options: VintedFacetOption[];
 }
 
 /** Annonce normalisée renvoyée par le client (sous-ensemble utile du JSON Vinted). */
@@ -80,6 +103,14 @@ export interface RawVintedItem {
   total_item_price?: VintedAmount;
   photo?: { url?: string; high_resolution?: { timestamp?: number } };
   user?: { login?: string };
+}
+
+/** Forme brute (partielle) d'une facette dans la réponse catalog/filters. */
+export interface RawVintedFilter {
+  code?: string;
+  title?: string;
+  type?: string;
+  options?: { id?: number; title?: string; value?: number }[];
 }
 
 /** Forme brute (partielle) de la réponse item detail (/api/v2/items/{id}). */

@@ -24,6 +24,9 @@ model SavedSearch {
   country         String   @default("fr") // domaine vinted: fr/de/it/es/be...
   includeKeywords String[] @default([])
   excludeKeywords String[] @default([])
+  // Facettes Vinted génériques : map { "<param>_ids": [ids] } (material_ids,
+  // color_ids, …). Couvre toute facette de toute catégorie sans migration.
+  facets          Json?
   channels        String[] @default(["telegram"]) // cles de canaux de notif actives
   dealOnly        Boolean  @default(false)
   minDealScore    Float? // seuil 0..1 si dealOnly

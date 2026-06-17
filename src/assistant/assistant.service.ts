@@ -188,6 +188,7 @@ export class AssistantService {
             priceTo: search.priceTo ? Number(search.priceTo) : null,
             order: search.order,
             country: search.country,
+            facets: search.facets as Record<string, number[]> | null,
           });
           return this.ok({
             vintedOk: diag.apiStatus === 200,
@@ -225,6 +226,13 @@ export class AssistantService {
             this.str(args.country),
           );
           return this.ok(catalogs);
+        }
+        case 'catalog_filters': {
+          const facets = await this.discovery.getCatalogFilters(
+            Number(args.catalogId),
+            this.str(args.country),
+          );
+          return this.ok(facets);
         }
         default:
           return { content: `Outil inconnu: ${name}`, isError: true };

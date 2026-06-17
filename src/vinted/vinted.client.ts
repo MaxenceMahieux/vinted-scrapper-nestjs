@@ -3,9 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
+  RawVintedFilter,
   RawVintedItem,
   RawVintedItemDetail,
   VintedAmount,
+  VintedFacet,
   VintedItem,
   VintedItemDetail,
   VintedSearchFilters,
@@ -297,7 +299,71 @@ export class VintedClient {
     if (filters.sizeIds?.length) params.size_ids = filters.sizeIds.join(',');
     if (filters.priceFrom != null) params.price_from = filters.priceFrom;
     if (filters.priceTo != null) params.price_to = filters.priceTo;
+    this.appendFacets(params, filters.facets);
     return params;
+  }
+
+  /**
+   * Fusionne les facettes génériques (material_ids, color_ids, …) dans la query.
+   * Sanitise les clés (`[a-z][a-z0-9_]*`) et les valeurs (entiers finis), et
+   * n'écrase jamais un paramètre déjà construit par un champ typé.
+   */
+  private appendFacets(
+    params: Record<string, string | number>,
+    facets: VintedSearchFilters['facets'],
+  ): void {
+    if (!facets || typeof facets !== 'object') return;
+    for (const [key, value] of Object.entries(facets)) {
+      if (!/^[a-z][a-z0-9_]*$/.test(key)) continue;
+      if (key in params) continue;
+      const ids = (Array.isArray(value) ? value : [])
+        .map(Number)
+        .filter((n) => Number.isFinite(n));
+      if (ids.length) params[key] = ids.join(',');
+    }
+  }
+
+  /**
+   * Découvre les facettes de filtres disponibles pour une catégorie (matière,
+   * couleur, etc.) afin de résoudre les IDs d'options par leur libellé.
+   *
+   * NOTE: le chemin exact de cet endpoint a évolué selon les versions de Vinted ;
+   * il est configurable via VINTED_FILTERS_PATH et à confirmer en prod (proxy +
+   * cookies). En cas de réponse inattendue, renvoie une liste vide sans lever.
+   */
+  async getCatalogFilters(
+    catalogId: number,
+    country?: string,
+  ): Promise<VintedFacet[]> {
+    const path = this.config.get<string>(
+      'VINTED_FILTERS_PATH',
+      '/api/v2/catalog/filters',
+    );
+    try {
+      const data = await this.authenticatedGet<{
+        filters?: RawVintedFilter[];
+        dynamic_filters?: RawVintedFilter[];
+      }>(path, { params: { catalog_ids: catalogId }, country });
+
+      const raw = data?.filters ?? data?.dynamic_filters ?? [];
+      return raw
+        .filter((f): f is RawVintedFilter & { code: string } => Boolean(f.code))
+        .map((f) => this.normalizeFacet(f));
+    } catch (err) {
+      this.logger.warn(
+        `Découverte des facettes échouée (catalogId=${catalogId}): ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
+
+  /** Normalise une facette brute en {@link VintedFacet}. */
+  private normalizeFacet(raw: RawVintedFilter & { code: string }): VintedFacet {
+    const options = (raw.options ?? [])
+      .map((o) => ({ id: o.id ?? o.value, title: o.title ?? '' }))
+      .filter((o): o is VintedFacet['options'][number] => o.id != null);
+    const paramKey = raw.code.endsWith('_ids') ? raw.code : `${raw.code}_ids`;
+    return { code: raw.code, paramKey, title: raw.title ?? raw.code, options };
   }
 
   /**

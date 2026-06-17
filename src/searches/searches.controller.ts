@@ -43,6 +43,14 @@ export class SearchesController {
     return this.discovery.searchBrands(name, country);
   }
 
+  @Get('discovery/filters')
+  getCatalogFilters(
+    @Query('catalogId') catalogId: string,
+    @Query('country') country?: string,
+  ) {
+    return this.discovery.getCatalogFilters(Number(catalogId), country);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSearchDto) {
     return this.searches.update(id, dto);

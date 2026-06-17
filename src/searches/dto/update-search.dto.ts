@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -73,6 +74,11 @@ export class UpdateSearchDto {
   @IsArray()
   @IsString({ each: true })
   excludeKeywords?: string[];
+
+  /** Facettes Vinted génériques : { "<param>_ids": [ids] } (material_ids, …). */
+  @IsOptional()
+  @IsObject()
+  facets?: Record<string, number[]>;
 
   @IsOptional()
   @IsArray()

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VintedClient } from './vinted.client';
-import { VintedBrand, VintedCatalog } from './vinted.types';
+import { VintedBrand, VintedCatalog, VintedFacet } from './vinted.types';
 
 /**
  * Service d'aide à la découverte des identifiants Vinted.
@@ -37,5 +37,20 @@ export class VintedDiscoveryService {
       `Marques Vinted trouvées pour "${name}" (${brands.length})`,
     );
     return brands;
+  }
+
+  /**
+   * Découvre les facettes de filtres d'une catégorie (matière, couleur, etc.)
+   * et leurs options, pour résoudre les IDs à placer dans `facets`.
+   */
+  async getCatalogFilters(
+    catalogId: number,
+    country?: string,
+  ): Promise<VintedFacet[]> {
+    const facets = await this.client.getCatalogFilters(catalogId, country);
+    this.logger.debug(
+      `Facettes Vinted récupérées (catalogId=${catalogId}): ${facets.length}`,
+    );
+    return facets;
   }
 }

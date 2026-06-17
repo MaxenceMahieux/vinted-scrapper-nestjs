@@ -50,6 +50,12 @@ const SEARCH_FILTER_PROPERTIES = {
     description:
       'Filtre local anti-bruit: le titre ne doit contenir aucun de ces mots.',
   },
+  facets: {
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'integer' } },
+    description:
+      'Facettes Vinted génériques en plus des champs typés : map { "<param>_ids": [ids] } (ex. {"material_ids":[44],"color_ids":[1]}). Couvre toute facette de toute catégorie (matière, couleur, etc.). Résous les IDs via catalog_filters avant de les renseigner.',
+  },
   channels: {
     type: 'array',
     items: { type: 'string' },
@@ -173,6 +179,23 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: 'catalog_filters',
+    description:
+      "Découvre les facettes de filtres disponibles pour une catégorie (matière, couleur, etc.) et leurs options (id + libellé). À utiliser pour résoudre les IDs à placer dans `facets` quand l'utilisateur demande un filtre spécifique à une catégorie (ex. bracelet cuir pour des montres).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        catalogId: {
+          type: 'integer',
+          description:
+            'ID de la catégorie dont on veut les facettes (via search_catalogs).',
+        },
+        country: { type: 'string', description: 'Pays Vinted (défaut fr).' },
+      },
+      required: ['catalogId'],
+    },
+  },
 ];
 
 export const ASSISTANT_SYSTEM_PROMPT = `Tu es l'assistant du "Vinted Scrapper", une app personnelle qui surveille Vinted et envoie des alertes (Telegram, etc.) dès qu'une nouvelle annonce correspond à une recherche sauvegardée.
@@ -182,6 +205,7 @@ Ton rôle : discuter en français avec l'utilisateur et traduire ses demandes en
 Filtres disponibles d'une recherche :
 - searchText : mots-clés (comme la barre de recherche Vinted)
 - catalogIds / brandIds / statusIds / sizeIds : IDs Vinted
+- facets : facettes génériques { "<param>_ids": [ids] } pour TOUT autre filtre Vinted (matière, couleur, etc.), valable pour n'importe quelle catégorie
 - priceFrom / priceTo : fourchette de prix
 - country : fr (défaut), de, it, es, be
 - includeKeywords : le titre DOIT contenir un de ces mots (filtre local)
@@ -191,6 +215,7 @@ Filtres disponibles d'une recherche :
 
 Règles :
 - Quand une marque ou une catégorie est citée par son nom, utilise search_brands / search_catalogs pour résoudre les IDs au lieu de les deviner. Si tu ne trouves pas, mets juste le terme dans searchText.
+- Pour un filtre spécifique à une catégorie (matière, couleur, etc., ex. « bracelet cuir » pour des montres) : trouve d'abord le catalogId (search_catalogs), puis appelle catalog_filters pour récupérer la facette voulue et l'id de l'option, et place-le dans facets (ex. {"material_ids":[44]}). Ne devine jamais ces IDs.
 - Avant toute suppression (delete_search), demande confirmation explicite à l'utilisateur.
 - Si l'utilisateur veut vérifier/tester qu'une alerte fonctionne, utilise list_searches pour trouver son id puis test_search (diagnostic de connexion), et rapporte le nombre d'annonces ou l'erreur Vinted.
 - Si l'utilisateur veut FORCER un scrape immédiat et recevoir les notifications maintenant (ex. « lance mon alerte », « scrape maintenant »), utilise run_search_now et rapporte les compteurs (récupérées / nouvelles / notifiées).

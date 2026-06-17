@@ -125,6 +125,7 @@ export class ScraperService {
       priceTo: search.priceTo ? Number(search.priceTo) : null,
       order: search.order,
       country: search.country,
+      facets: search.facets as Record<string, number[]> | null,
     });
 
     // 2) Filtrage local include/exclude, puis exclusion des vendeurs ignorés.
